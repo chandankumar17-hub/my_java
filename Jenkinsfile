@@ -5,7 +5,7 @@ pipeline {
         SSH_CREDENTIALS_ID = 'ec2-ssh-key-id'          // Jenkins stored SSH private key ID
         EC2_USER = 'ec2-user'                          // SSH user on EC2
         EC2_HOST = '18.212.93.247'                // EC2 public IP or DNS
-        TOMCAT_WEBAPPS_PATH = '/opt/tomcat/webapps'   // Tomcat WAR deploy folder
+        TOMCAT_WEBAPPS_PATH = '/opt/tomcat9/webapps'   // Tomcat WAR deploy folder
     }
 
     stages {
