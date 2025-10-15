@@ -1,44 +1,63 @@
 pipeline {
-    agent any
+    agent { label 'linux_git' }
+
+    tools {
+        jdk 'JDK 11'             // Match your Jenkins JDK name
+        maven 'Maven 3.8.1'      // Match your Maven installation in Jenkins
+    }
 
     environment {
-        SSH_CREDENTIALS_ID = 'ec2-ssh-key-id'          // Jenkins stored SSH private key ID
-        EC2_USER = 'ec2-user'                          // SSH user on EC2
-        EC2_HOST = '18.212.93.247'                // EC2 public IP or DNS
-        TOMCAT_WEBAPPS_PATH = '/opt/tomcat9/webapps'   // Tomcat WAR deploy folder
+        MAVEN_OPTS = "-Dmaven.test.failure.ignore=false"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                // Clone your GitHub repo
-                git url: 'https://github.com/chandankumar17-hub/my_java.git', branch: 'main'
+                git branch: 'main',
+                git 'https://github.com/chandankumar17-hub/my_java.git' 
             }
         }
 
-        stage('Build') {
+        stage('Lint (Checkstyle)') {
             steps {
-                // Use Maven to build the project and create WAR file
+                echo '🔍 Running Checkstyle...'
+                sh 'mvn checkstyle:checkstyle'
+            }
+            post {
+                always {
+                    recordIssues(
+                        tool: checkStyle(pattern: 'target/checkstyle-result.xml'),
+                        qualityGates: [[threshold: 1, type: 'TOTAL', unstable: true]]
+                    )
+                }
+            }
+        }
+
+        stage('Build with Maven') {
+            steps {
                 sh 'mvn clean package'
             }
         }
 
-        stage('Deploy') {
+        stage('Archive JAR') {
             steps {
-                sshagent([SSH_CREDENTIALS_ID]) {
-                    // Copy the WAR file to EC2 Tomcat webapps folder
-                    sh """
-                        scp target/*.war ${EC2_USER}@${EC2_HOST}:${TOMCAT_WEBAPPS_PATH}/
-                    """
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            }
+        }
 
-                    // Restart Tomcat to deploy the new WAR
-                    sh """
-                        ssh ${EC2_USER}@${EC2_HOST} '/opt/tomcat9/bin/shutdown.sh'
-                        ssh ${EC2_USER}@${EC2_HOST} '/opt/tomcat9/bin/startup.sh'
-                    """
-                }
+        stage('Publish Test Results') {
+            steps {
+                junit 'target/surefire-reports/*.xml'
             }
         }
     }
-}
 
+    post {
+        success {
+            echo '✅ Build, tests, and linting completed successfully.'
+        }
+        failure {
+            echo '❌ Something failed. Check logs and reports.'
+        }
+    }
+}
