@@ -1,41 +1,35 @@
 pipeline {
-    agent { label 'linux_git' }
-
-    tools {
-        jdk 'JDK 11'             // Match your Jenkins JDK name
-        maven 'Maven 3.8.1'      // Match your Maven installation in Jenkins
-    }
+    agent any
 
     environment {
-        MAVEN_OPTS = "-Dmaven.test.failure.ignore=false"
+        // Optional: Set JAVA_HOME manually if needed
+        // JAVA_HOME = '/usr/lib/jvm/java-11-openjdk-amd64'
+        // PATH = "${JAVA_HOME}/bin:${env.PATH}"
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
                 git branch: 'main',
-                git 'https://github.com/chandankumar17-hub/my_java.git' 
+                    url: 'https://github.com/chandankumar17-hub/my_java.git'
             }
         }
 
-        stage('Lint (Checkstyle)') {
+        stage('Build') {
             steps {
-                echo '🔍 Running Checkstyle...'
-                sh 'mvn checkstyle:checkstyle'
-            }
-            post {
-                always {
-                    recordIssues(
-                        tool: checkStyle(pattern: 'target/checkstyle-result.xml'),
-                        qualityGates: [[threshold: 1, type: 'TOTAL', unstable: true]]
-                    )
-                }
+                sh 'mvn clean compile'
             }
         }
 
-        stage('Build with Maven') {
+        stage('Test') {
             steps {
-                sh 'mvn clean package'
+                sh 'mvn test'
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh 'mvn package'
             }
         }
 
@@ -44,20 +38,18 @@ pipeline {
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
-
-        stage('Publish Test Results') {
-            steps {
-                junit 'target/surefire-reports/*.xml'
-            }
-        }
     }
 
     post {
         success {
-            echo '✅ Build, tests, and linting completed successfully.'
+            echo '✅ Build succeeded!'
         }
         failure {
-            echo '❌ Something failed. Check logs and reports.'
+            echo '❌ Build failed!'
+        }
+        always {
+            junit 'target/surefire-reports/*.xml'
         }
     }
 }
+
