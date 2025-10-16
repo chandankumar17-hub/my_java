@@ -8,6 +8,13 @@ pipeline {
             }
         }
 
+        stage('Lint') {
+            steps {
+                // Run maven checkstyle plugin, make sure you have it configured in your pom.xml
+                sh 'mvn checkstyle:check'
+            }
+        }
+
         stage('Build') {
             steps {
                 sh 'mvn clean compile'
