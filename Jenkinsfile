@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    environment {
+        SONARQUBE_ENV = 'SonarQube' // Must match the name you set in Jenkins > Configure System
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -24,6 +28,17 @@ pipeline {
         stage('Test') {
             steps {
                 sh 'mvn test'
+            }
+        }
+         stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${SONARQUBE_ENV}") {
+                    sh '''
+                        mvn sonar:sonar \
+                        -Dsonar.projectKey=my_java \
+                        -Dsonar.projectName=my_java
+                    '''
+                }
             }
         }
 
