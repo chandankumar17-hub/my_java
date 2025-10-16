@@ -1,17 +1,10 @@
 pipeline {
     agent any
 
-    environment {
-        // Optional: Set JAVA_HOME manually if needed
-        // JAVA_HOME = '/usr/lib/jvm/java-11-openjdk-amd64'
-        // PATH = "${JAVA_HOME}/bin:${env.PATH}"
-    }
-
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/chandankumar17-hub/my_java.git'
+                git branch: 'main', url: 'https://github.com/chandankumar17-hub/my_java.git'
             }
         }
 
@@ -52,4 +45,3 @@ pipeline {
         }
     }
 }
-
