@@ -1,18 +1,23 @@
 pipeline {
     agent any
     tools {
-        git 'Default'       // Git tool
-        maven 'Maven'       // Maven tool from Global Tool Configuration
-        jdk 'Java17'        // JDK tool
+        git 'Default'
+        maven 'Maven'
+        jdk 'Java17'
     }
+
     environment {
-        IMAGE_NAME = "my_java_app:latest"
-        DOCKER_PORT = "8081"
+        AWS_CREDENTIALS = credentials('aws_ecr')      // Jenkins Credentials ID
+        AWS_REGION = "us-east-1"
+        AWS_ACCOUNT_ID = "648696431853"
+        IMAGE_NAME = "chandan/prod"
+        ECR_URL = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
     }
+
     stages {
+
         stage('Checkout') {
             steps {
-                echo "Checking out source code..."
                 git branch: 'main',
                     url: 'https://github.com/chandankumar17-hub/my_java.git',
                     credentialsId: 'git'
@@ -21,44 +26,48 @@ pipeline {
 
         stage('Lint') {
             steps {
-                echo "Running code quality lint checks..."
-                sh 'mvn checkstyle:check || true' // fails or warns based on plugin config
+                sh 'mvn checkstyle:check || true'
             }
         }
 
         stage('Build & Package') {
             steps {
-                echo "Building Java project and packaging jar..."
                 sh 'mvn clean package'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "Building Docker image..."
-                sh "docker build -t ${IMAGE_NAME} ."
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
-        stage('Run Docker Container') {
+        stage('Login to ECR') {
             steps {
-                echo "Deploying Docker container..."
+                sh '''
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login --username AWS --password-stdin ${ECR_URL}
+                '''
+            }
+        }
+
+        stage('Tag & Push to ECR') {
+            steps {
                 sh """
-                    if [ \$(docker ps -aq -f name=my_java_app) ]; then
-                        docker rm -f my_java_app
-                    fi
-                    docker run -d --name my_java_app -p ${DOCKER_PORT}:8080 ${IMAGE_NAME}
+                    docker tag ${IMAGE_NAME}:latest ${ECR_URL}/${IMAGE_NAME}:latest
+                    docker push ${ECR_URL}/${IMAGE_NAME}:latest
                 """
             }
         }
     }
+
     post {
         success {
-            echo 'Pipeline completed successfully!'
             archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            echo '🎉 Image built and pushed to ECR successfully!'
         }
         failure {
-            echo 'Pipeline failed!'
+            echo '❌ Pipeline failed!'
         }
     }
 }
