@@ -1,73 +1,81 @@
 pipeline {
     agent any
+
     tools {
-        git 'Default'
         maven 'Maven'
         jdk 'Java17'
     }
 
     environment {
-        AWS_CREDENTIALS = credentials('aws_ecr')      // Jenkins Credentials ID
-        AWS_REGION = "us-east-1"
         AWS_ACCOUNT_ID = "648696431853"
-        IMAGE_NAME = "chandan/prod"
-        ECR_URL = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        AWS_REGION     = "us-east-1"
+        ECR_REPO       = "chandan/prod"
+        IMAGE_TAG      = "v${BUILD_NUMBER}"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/chandankumar17-hub/my_java.git',
-                    credentialsId: 'git'
-            }
-        }
-
-        stage('Lint') {
-            steps {
-                sh 'mvn checkstyle:check || true'
+                echo "Cloning Source Code..."
+                git url: 'https://github.com/chandankumar17-hub/my_java.git', branch: 'main'
+                // If repo is private then use:
+                // git url: 'https://github.com/chandankumar17-hub/my_java.git', branch: 'main', credentialsId: 'git'
             }
         }
 
         stage('Build & Package') {
             steps {
+                echo "Building Java project..."
                 sh 'mvn clean package'
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Docker Build') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:latest ."
+                script {
+                    fullImage = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
+                }
+                echo "Building Docker image..."
+                sh "docker build -t ${fullImage} ."
             }
         }
 
-        stage('Login to ECR') {
+        stage('Docker Login to ECR') {
             steps {
+                echo "Authenticating Docker with AWS ECR..."
                 sh '''
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login --username AWS --password-stdin ${ECR_URL}
+                aws ecr get-login-password --region ${AWS_REGION} \
+                | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
                 '''
             }
         }
 
-        stage('Tag & Push to ECR') {
+        stage('Push to ECR') {
             steps {
-                sh """
-                    docker tag ${IMAGE_NAME}:latest ${ECR_URL}/${IMAGE_NAME}:latest
-                    docker push ${ECR_URL}/${IMAGE_NAME}:latest
-                """
+                echo "Pushing Docker Image to ECR..."
+                sh "docker push ${fullImage}"
+            }
+        }
+
+        stage('Run Docker Locally') {
+            steps {
+                echo "Running docker container locally..."
+                sh '''
+                docker stop myapp || true
+                docker rm myapp || true
+                docker run -d --name myapp -p 8081:8080 ${fullImage}
+                '''
             }
         }
     }
 
     post {
         success {
-            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-            echo '🎉 Image built and pushed to ECR successfully!'
+            echo "Pipeline completed successfully! Image pushed: ${fullImage}"
         }
         failure {
-            echo '❌ Pipeline failed!'
+            echo "Pipeline failed!"
         }
     }
 }
