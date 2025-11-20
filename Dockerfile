@@ -2,16 +2,18 @@
 FROM maven:3.9.2-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# Copy source code
+# Copy only the POM (no src/ since it doesn't exist)
 COPY pom.xml .
-COPY src ./src
 
+# Run Maven package (will produce an empty JAR if no src/)
 RUN mvn clean package
 
-# Stage 2: Create runtime image
+# Stage 2: Runtime image
 FROM openjdk:17-jdk-slim
 WORKDIR /app
 
+# Copy the JAR from the build stage
 COPY --from=build /app/target/*.jar app.jar
 
+# Run the app
 ENTRYPOINT ["java", "-jar", "app.jar"]
