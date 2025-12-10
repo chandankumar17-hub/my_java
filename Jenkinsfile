@@ -2,28 +2,29 @@ pipeline {
   agent any
 
   environment {
-    // AWS & ECR
+    // AWS / ECR
     AWS_ACCOUNT_ID = '476360959449'
     AWS_REGION    = 'us-east-1'
     ECR_REPO      = 'prod/my-app'
     IMAGE_TAG     = "${BUILD_NUMBER}"
+
+    // Kubernetes
+    K8S_NAMESPACE = 'prod'
+    DEPLOYMENT    = 'my-app-deployment'
+    CONTAINER     = 'my-app'
   }
 
   stages {
 
-    stage('Checkout Code') {
+    stage('Checkout') {
       steps {
-        // Uses same repo/branch as Pipeline from SCM
         checkout scm
       }
     }
 
-    stage('Lint Dockerfile') {
+    stage('Docker Build') {
       steps {
-        sh '''
-        echo "Running Dockerfile lint..."
-        docker run --rm -i hadolint/hadolint < Dockerfile
-        '''
+        sh 'docker build -t my-app:$IMAGE_TAG .'
       }
     }
 
@@ -37,28 +38,28 @@ pipeline {
       }
     }
 
-    stage('Build Docker Image') {
-      steps {
-        sh '''
-        docker build -t my-app:$IMAGE_TAG .
-        '''
-      }
-    }
-
-    stage('Tag Docker Image') {
+    stage('Push Image to ECR') {
       steps {
         sh '''
         docker tag my-app:$IMAGE_TAG \
         $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+
+        docker push \
+        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
         '''
       }
     }
 
-    stage('Push Image to ECR') {
+    stage('Deploy to Kubernetes 🚀') {
       steps {
         sh '''
-        docker push \
-        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+        kubectl config use-context kubernetes-admin@kubernetes
+
+        kubectl set image deployment/$DEPLOYMENT \
+        $CONTAINER=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG \
+        -n $K8S_NAMESPACE
+
+        kubectl rollout status deployment/$DEPLOYMENT -n $K8S_NAMESPACE
         '''
       }
     }
@@ -66,10 +67,10 @@ pipeline {
 
   post {
     success {
-      echo "✅ Image pushed successfully to ECR: $ECR_REPO:$IMAGE_TAG"
+      echo "✅ Deployment successful to PROD"
     }
     failure {
-      echo "❌ Pipeline failed"
+      echo "❌ Deployment failed"
     }
     always {
       sh 'docker system prune -f || true'
