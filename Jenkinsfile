@@ -9,7 +9,7 @@ pipeline {
         K8S_NAMESPACE  = 'prod'
         DEPLOYMENT     = 'web-app' // Name of your K8s deployment
         CONTAINER      = 'web-app' // Name of container inside deployment
-        KUBECONFIG     = '/var/lib/jenkins/.kube/config'
+        KUBECONFIG = "/var/lib/jenkins/.kube/config"
     }
 
     stages {
