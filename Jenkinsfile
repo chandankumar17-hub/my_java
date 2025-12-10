@@ -2,13 +2,10 @@ pipeline {
     agent any
 
     environment {
-        AWS_ACCOUNT_ID = '476360959449'
-        AWS_REGION     = 'us-east-1'
-        ECR_REPO       = 'prod/my-app'
-        IMAGE_TAG      = "${BUILD_NUMBER}" // Use Jenkins build number as image tag
-        DEPLOYMENT     = 'web-app'
-        K8S_NAMESPACE  = 'prod'
-        KUBECONFIG     = '/var/lib/jenkins/.kube/config'
+        APP_NAME = "my-app"
+        IMAGE_TAG = "1"
+        ECR_URI = "476360959449.dkr.ecr.us-east-1.amazonaws.com/prod/${APP_NAME}:${IMAGE_TAG}"
+        AWS_REGION = "us-east-1"
     }
 
     stages {
@@ -26,54 +23,55 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh """
-                    docker build -t my-app:${IMAGE_TAG} .
-                """
+                sh "docker build -t ${APP_NAME}:${IMAGE_TAG} ."
             }
         }
 
         stage('Login to ECR') {
             steps {
-                sh """
-                    echo 'Logging in to ECR...'
-                    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-                """
+                withEnv(["AWS_REGION=${AWS_REGION}"]) {
+                    sh '''
+                        echo "Logging in to ECR..."
+                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin 476360959449.dkr.ecr.us-east-1.amazonaws.com
+                    '''
+                }
             }
         }
 
         stage('Push Image to ECR') {
             steps {
                 sh """
-                    echo 'Tagging and pushing image to ECR...'
-                    docker tag my-app:${IMAGE_TAG} $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${IMAGE_TAG}
-                    docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${IMAGE_TAG}
+                    echo "Tagging and pushing image to ECR..."
+                    docker tag ${APP_NAME}:${IMAGE_TAG} ${ECR_URI}
+                    docker push ${ECR_URI}
                 """
             }
         }
 
         stage('Deploy to Kubernetes 🚀') {
             steps {
-                echo 'Deploying to Kubernetes...'
-                withEnv(["KUBECONFIG=${KUBECONFIG}"]) {
-                    sh """
+                withCredentials([file(credentialsId: 'kubeconfig-prod', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        echo "Deploying to Kubernetes..."
+                        export KUBECONFIG=$KUBECONFIG
                         kubectl config use-context kubernetes-admin@kubernetes
-                        kubectl set image deployment/$DEPLOYMENT $DEPLOYMENT=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${IMAGE_TAG} -n $K8S_NAMESPACE
-                        kubectl rollout status deployment/$DEPLOYMENT -n $K8S_NAMESPACE
-                    """
+                        kubectl apply -f k8s/deployment.yaml
+                        kubectl apply -f k8s/service.yaml
+                    '''
                 }
             }
         }
     }
 
     post {
+        always {
+            sh 'docker system prune -f'
+        }
         success {
-            echo "✅ Deployment successful to PROD"
+            echo "✅ Deployment succeeded!"
         }
         failure {
             echo "❌ Deployment failed"
-        }
-        always {
-            sh 'docker system prune -f || true'
         }
     }
 }
