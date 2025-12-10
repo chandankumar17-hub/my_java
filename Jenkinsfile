@@ -57,4 +57,22 @@ pipeline {
                     kubectl config use-context kubernetes-admin@kubernetes
                     kubectl set image deployment/${DEPLOYMENT} \
                     ${CONTAINER}=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG} \
-                    -n ${K8S_N_
+                    -n ${K8S_NAMESPACE}
+                    kubectl rollout status deployment/${DEPLOYMENT} -n ${K8S_NAMESPACE}
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Deployment successful to PROD"
+        }
+        failure {
+            echo "❌ Deployment failed"
+        }
+        always {
+            sh 'docker system prune -f || true'
+        }
+    }
+}
