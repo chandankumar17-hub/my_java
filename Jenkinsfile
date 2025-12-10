@@ -2,35 +2,32 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = 'us-east-1'
-        ECR_REGISTRY = '476360959449.dkr.ecr.us-east-1.amazonaws.com'
-        IMAGE_NAME = 'prod/my-app'
-        KUBE_CREDENTIALS_ID = 'kubeconfig-prod'  // Jenkins Secret File
-        NAMESPACE = 'prod'
+        IMAGE_NAME = "my-app"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        ECR_REGISTRY = "476360959449.dkr.ecr.us-east-1.amazonaws.com/prod"
+        NAMESPACE = "prod"
+        KUBECONFIG = credentials('kubeconfig-prod') // Add this in Jenkins credentials
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/chandankumar17-hub/my_java.git'
+            }
+        }
+
+        stage('Build Java App') {
+            steps {
+                sh 'mvn clean package'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    // Use build number as tag
-                    env.IMAGE_TAG = "${BUILD_NUMBER}"
-                    sh "docker build -t my-app:${IMAGE_TAG} ."
-                }
-            }
-        }
-
-        stage('Login to ECR') {
-            steps {
                 sh """
-                aws ecr get-login-password --region ${AWS_REGION} | \
-                docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                 """
             }
         }
@@ -38,7 +35,8 @@ pipeline {
         stage('Push Image to ECR') {
             steps {
                 sh """
-                docker tag my-app:${IMAGE_TAG} ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                aws ecr get-login-password --region us-east-1 | \
+                docker login --username AWS --password-stdin ${ECR_REGISTRY}
                 docker push ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                 """
             }
@@ -46,26 +44,24 @@ pipeline {
 
         stage('Deploy to Kubernetes 🚀') {
             steps {
-                withCredentials([file(credentialsId: "${KUBE_CREDENTIALS_ID}", variable: 'KUBECONFIG')]) {
-                    sh """
-                    export KUBECONFIG=$KUBECONFIG
-                    kubectl config use-context kubernetes-admin@kubernetes
+                sh """
+                export KUBECONFIG=$KUBECONFIG
+                kubectl config use-context kubernetes-admin@kubernetes
 
-                    # Update image in deployment.yaml dynamically
-                    kubectl set image -f deployment.yaml java-app=${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -n ${NAMESPACE}
+                # Update image in deployment.yaml
+                sed -i "s|image: .*|image: ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g" k8s/deployment.yaml
 
-                    # Apply service (if not already exists)
-                    kubectl apply -f service.yaml -n ${NAMESPACE}
+                # Apply deployment and service
+                kubectl apply -f k8s/deployment.yaml -n ${NAMESPACE}
+                kubectl apply -f k8s/service.yaml -n ${NAMESPACE}
 
-                    # Wait for deployment rollout
-                    kubectl rollout status deployment/java-app -n ${NAMESPACE}
-
-                    # Check pods status
-                    kubectl get pods -n ${NAMESPACE}
-                    """
-                }
+                # Wait for rollout
+                kubectl rollout status deployment/${IMAGE_NAME} -n ${NAMESPACE}
+                kubectl get pods -n ${NAMESPACE}
+                """
             }
         }
+
     }
 
     post {
